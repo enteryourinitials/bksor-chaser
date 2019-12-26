@@ -247,7 +247,7 @@ void animationCross()
 {
   int inverseColourSequenceIndex = (COLOUR_SEQUENCE_SIZE - 1) - colourSequenceIndex;
   
-  for (int i  = 0; i < LEDS_PER_STRIP - 1; i++)
+  for (int i  = 0; i < LEDS_PER_STRIP; i++)
   {
     leds[i] =  colourSequence[colourSequenceIndex];
     leds[RIGHT_STRIP_INDEX + i] = colourSequence[inverseColourSequenceIndex];
