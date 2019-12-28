@@ -3,9 +3,10 @@
  * 
  * Author: Andrew Burch
  * Notes: Arduino driven LED animation for the ramp on Black Knight: Sword of Rage pinball machine
- *    - Designed to animate the dark ramp on Black Knight Pro models 
+ *    - Designed to animate the unlit ramp lighting bolt cutouts on Black Knight Pro models 
  *    - Controlled by Arduino Uno board - requires 12V input
- *    - Addressable WS2812 RGB LED strip cut in 2 that animates
+ *    - Uses addressable WS2812 RGB LED strip cut in 2
+ *    - TODO: Add sensor to detect flail movement and change animation type
  *    
  *    - LED index layout
  *        6 | 7   <- top of ramp
@@ -29,24 +30,40 @@
 #define LEFT_STRIP_INDEX 0              // first LED index of left strip
 #define RIGHT_STRIP_INDEX 7             // first LED index of right strip
 
-#define ANIMATION_DELAY 50              // delay (in milliseconds) between animation update
+#define COLOUR_SEQUENCE_SIZE 11         // number of colours in the animation sequence
+
+#define ANIMATION_DELAY_CHASE 50        // delay (in milliseconds) between animation frame update
+#define ANIMATION_DELAY_OFFSET_CHASE 50
+#define ANIMATION_DELAY_GLOW 50
+#define ANIMATION_DELAY_CROSS 50
+#define ANIMATION_DELAY_ZIPPY 40
+#define ANIMATION_DELAY_ZIPPY_CROSS 40
 
 #define ANIMATION_TYPE_CHASE 0
 #define ANIMATION_TYPE_OFFSET_CHASE 1
 #define ANIMATION_TYPE_GLOW 2
 #define ANIMATION_TYPE_CROSS 3
+#define ANIMATION_TYPE_ZIPPY 4
+#define ANIMATION_TYPE_ZIPPY_CROSS 5
 
-#define COLOUR_SEQUENCE_SIZE 11         // number of colours in the animation sequence
+#define SWITCH_ANIMATE_DELAY 4000     // number of milliseconds to play each animation type
 
+#define zippyMapSize COLOUR_SEQUENCE_SIZE * 2 + LEDS_PER_STRIP;
 
 // global variables
 int animationType = ANIMATION_TYPE_CHASE;
-int colourSequenceIndex = 0;            // index into colour animation table
-int changeAnimationTypeCountdown = 80;  // duration to play animation type
-float glowDirection = 1;                // glow animation direction (1 = fade up, -1 = fade down)
+int animationDelay = ANIMATION_DELAY_CHASE;
+
+int colourSequenceIndex = 0;                // index into colour animation table
+int animationTimer = SWITCH_ANIMATE_DELAY;  // time until animation type is updated
+int glowDirection = 1;                      // glow animation direction (1 = fade up, -1 = fade down)
 
 CRGB leds[NUM_ANIMATION_LEDS];              // RGB resources for rendering to the LED strips
 CRGB colourSequence[COLOUR_SEQUENCE_SIZE];  // colour look up table for animation
+
+int zippyMapDirection = 1;
+int zippyMapIndex = COLOUR_SEQUENCE_SIZE - 1;
+CRGB zippyMap[29];
 
 
 /**
@@ -55,6 +72,11 @@ CRGB colourSequence[COLOUR_SEQUENCE_SIZE];  // colour look up table for animatio
 void setup()
 {
   FastLED.addLeds<WS2812, DATA_PIN_LED, GRB>(leds, NUM_ANIMATION_LEDS);
+
+  for (int i = 0; i < 29; i++)
+  {
+    zippyMap[i] = CRGB(0, 0, 0);
+  }  
 
   // init colour sequence
   colourSequence[0] = CRGB(255, 154, 0);
@@ -95,15 +117,21 @@ void loop()
     case ANIMATION_TYPE_CROSS:
       animationCross();
       break;
+    case ANIMATION_TYPE_ZIPPY:
+      animationZippy();
+      break;
+    case ANIMATION_TYPE_ZIPPY_CROSS:
+      animationZippyCross();
+      break;
      default:
       break;
   }
   
   FastLED.show();
 
-  delay(ANIMATION_DELAY);
+  delay(animationDelay);
 
-  updateAnimationType();
+  updateAnimationType(animationDelay);
 }
 
 
@@ -122,29 +150,67 @@ void resetLEDState()
 /**
  * Update the animation type being played
  */
-void updateAnimationType()
+void updateAnimationType(int frameDelay)
 {
   // advance the count down
-  changeAnimationTypeCountdown--;
+  animationTimer -= frameDelay;
 
   // once count down reaches zero, switch to the next animation type
-  if (changeAnimationTypeCountdown == 0)
+  if (animationTimer <= 0)
   {
-    // reset the count down and colour index for the next animation type
-    changeAnimationTypeCountdown = 80;
-    colourSequenceIndex = 0;
-
-    // default all LEDs to being off when entering new state
-    resetLEDState();
-
+    animationTimer = SWITCH_ANIMATE_DELAY;
+    
     animationType++;
 
     // if all animation types have been played, loop back to the start
-    if (animationType > ANIMATION_TYPE_CROSS)
+    if (animationType > ANIMATION_TYPE_ZIPPY_CROSS)
     {
       animationType = ANIMATION_TYPE_CHASE;
     }
+
+    initAnimationType(animationType);
+
+    // default all LEDs to being off when entering new state
+    resetLEDState();
   }  
+}
+
+
+/**
+ * initialise animation type variables
+ */
+void initAnimationType(int animType)
+{
+  switch (animType)
+  {
+    case ANIMATION_TYPE_CHASE:
+      animationDelay = ANIMATION_DELAY_CHASE;
+      colourSequenceIndex = 0;
+      break;
+    case ANIMATION_TYPE_OFFSET_CHASE:
+      animationDelay = ANIMATION_DELAY_OFFSET_CHASE;
+      colourSequenceIndex = 0;
+      break;
+    case ANIMATION_TYPE_GLOW:
+      animationDelay = ANIMATION_DELAY_GLOW;
+      colourSequenceIndex = 0;
+      glowDirection = 1;
+      break;
+    case ANIMATION_TYPE_CROSS:
+      animationDelay = ANIMATION_DELAY_CROSS;
+      colourSequenceIndex = 0;
+      glowDirection = 1;
+      break;
+    case ANIMATION_TYPE_ZIPPY:
+      animationDelay = ANIMATION_DELAY_ZIPPY;
+      break;
+    case ANIMATION_TYPE_ZIPPY_CROSS:
+      animationDelay = ANIMATION_DELAY_ZIPPY_CROSS;
+      break;
+    default:
+      // we shouldn't reach this
+      break;
+  }
 }
 
 
@@ -261,4 +327,96 @@ void animationCross()
     glowDirection *= -1;
     colourSequenceIndex += glowDirection; // get the index back into a valid state
   }
+}
+
+
+/**
+ * Strobe up and down the LED strips
+ */
+void animationZippy()
+{
+  if (zippyMapDirection == 1)
+  {
+    for (int i  = 0; i < COLOUR_SEQUENCE_SIZE; i++)
+    {
+      zippyMap[zippyMapIndex - i] = colourSequence[i];
+    }
+
+    zippyMapIndex += 1;
+
+    if (zippyMapIndex == 24)
+    {
+      zippyMapDirection = 2;
+      zippyMapIndex = 18;
+    }
+  }
+
+  if (zippyMapDirection == 2)
+  {
+    for (int i  = 0; i < COLOUR_SEQUENCE_SIZE; i++)
+    {
+      zippyMap[zippyMapIndex + i] = colourSequence[i];
+    }
+
+    zippyMapIndex -= 1;
+
+    if (zippyMapIndex == 4)
+    {
+      zippyMapDirection = 1;
+      zippyMapIndex = 10;
+    }
+  }
+
+  // copy buffer segment to the LED strip for rendering
+  for (int i = 0; i < LEDS_PER_STRIP; i++)
+  {
+    leds[i] = zippyMap[COLOUR_SEQUENCE_SIZE + i];
+    leds[NUM_ANIMATION_LEDS - 1 - i] = zippyMap[COLOUR_SEQUENCE_SIZE + i];
+  }  
+}
+
+
+/**
+ * Strobe up and down the LED strips, but each strip is the opposite
+ */
+void animationZippyCross()
+{
+  if (zippyMapDirection == 1)
+  {
+    for (int i  = 0; i < COLOUR_SEQUENCE_SIZE; i++)
+    {
+      zippyMap[zippyMapIndex - i] = colourSequence[i];
+    }
+
+    zippyMapIndex += 1;
+
+    if (zippyMapIndex == 24)
+    {
+      zippyMapDirection = 2;
+      zippyMapIndex = 18;
+    }
+  }
+
+  if (zippyMapDirection == 2)
+  {
+    for (int i  = 0; i < COLOUR_SEQUENCE_SIZE; i++)
+    {
+      zippyMap[zippyMapIndex + i] = colourSequence[i];
+    }
+
+    zippyMapIndex -= 1;
+
+    if (zippyMapIndex == 4)
+    {
+      zippyMapDirection = 1;
+      zippyMapIndex = 10;
+    }
+  }
+
+  // copy buffer segment to the LED strip for rendering
+  for (int i = 0; i < LEDS_PER_STRIP; i++)
+  {
+    leds[i] = zippyMap[COLOUR_SEQUENCE_SIZE + i];
+    leds[NUM_ANIMATION_LEDS - 1 - i] = zippyMap[COLOUR_SEQUENCE_SIZE + LEDS_PER_STRIP - i - 1];
+  }  
 }
