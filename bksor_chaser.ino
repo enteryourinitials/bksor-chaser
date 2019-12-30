@@ -31,6 +31,7 @@
 #define RIGHT_STRIP_INDEX 7             // first LED index of right strip
 
 #define COLOUR_SEQUENCE_SIZE 11         // number of colours in the animation sequence
+#define COLOUR_DATA_LENGTH 22
 
 #define ANIMATION_DELAY_CHASE 50        // delay (in milliseconds) between animation frame update
 #define ANIMATION_DELAY_OFFSET_CHASE 50
@@ -59,6 +60,8 @@ int animationTypeDelay = ANIMATION_DELAY_CHASE;
 int animationDelay = ANIMATION_DELAY_CHASE; // delay (in milliseconds) between each update
 int animationTimer = SWITCH_ANIMATE_DELAY;  // time until animation type is updated
 
+int colourScheme[] = {255, 154, 255, 122, 255, 90, 255, 0, 128, 0, 64, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
 unsigned long deltaTime;
 unsigned long currentMillis;
 unsigned long lastFrameMillis;
@@ -74,29 +77,24 @@ CRGB colourSequence[COLOUR_SEQUENCE_SIZE];  // colour look up table for animatio
 
 
 /**
- * setup - Initialise LED strip and colour sequence
+ * setup - initialise LED strip and colour sequence
  */
 void setup()
 {
+  FastLED.addLeds<WS2812, DATA_PIN_LED, GRB>(leds, NUM_ANIMATION_LEDS);
+
+  // init colour sequence
+  int j = 0;
+  for (int i = 0; i < COLOUR_DATA_LENGTH; i+=2)
+  {
+    colourSequence[j++] = CRGB(colourScheme[i], colourScheme[i + 1], 0);
+  }
+
+  // init zippy effect colour map (TODO revisit & handle this differently)
   for (int i = 0; i < 29; i++)
   {
     zippyMap[i] = CRGB(0, 0, 0);
   }  
-
-  FastLED.addLeds<WS2812, DATA_PIN_LED, GRB>(leds, NUM_ANIMATION_LEDS);
-
-  // init colour sequence
-  colourSequence[0] = CRGB(255, 154, 0);
-  colourSequence[1] = CRGB(255, 122, 0);
-  colourSequence[2] = CRGB(255, 90, 0);
-  colourSequence[3] = CRGB(255, 0, 0);
-  colourSequence[4] = CRGB(128, 0, 0);
-  colourSequence[5] = CRGB(64, 0, 0);
-  colourSequence[6] = CRGB(32, 0, 0);
-  colourSequence[7] = CRGB(0, 0, 0);
-  colourSequence[8] = CRGB(0, 0, 0);
-  colourSequence[9] = CRGB(0, 0, 0);
-  colourSequence[10] = CRGB(0, 0, 0);
 
   // start all leds as black (off)
   resetLEDState();
