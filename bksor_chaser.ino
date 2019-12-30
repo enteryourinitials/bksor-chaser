@@ -45,6 +45,7 @@
 #define ANIMATION_TYPE_CROSS 3
 #define ANIMATION_TYPE_ZIPPY 4
 #define ANIMATION_TYPE_ZIPPY_CROSS 5
+#define ANIMATION_TYPE_NONE 6
 
 #define ZIPPY_DIRECTION_UP 1
 #define ZIPPY_DIRECTION_DOWN 2
@@ -54,8 +55,13 @@
 
 // global variables
 int animationType = ANIMATION_TYPE_CHASE;   // current animation type to render
+int animationTypeDelay = ANIMATION_DELAY_CHASE;
 int animationDelay = ANIMATION_DELAY_CHASE; // delay (in milliseconds) between each update
 int animationTimer = SWITCH_ANIMATE_DELAY;  // time until animation type is updated
+
+unsigned long deltaTime;
+unsigned long currentMillis;
+unsigned long lastFrameMillis;
 
 int colourSequenceIndex = 0;                // index into colour animation table
 int glowDirection = 1;                      // glow animation direction (1 = fade up, -1 = fade down)
@@ -72,12 +78,12 @@ CRGB colourSequence[COLOUR_SEQUENCE_SIZE];  // colour look up table for animatio
  */
 void setup()
 {
-  FastLED.addLeds<WS2812, DATA_PIN_LED, GRB>(leds, NUM_ANIMATION_LEDS);
-
   for (int i = 0; i < 29; i++)
   {
     zippyMap[i] = CRGB(0, 0, 0);
   }  
+
+  FastLED.addLeds<WS2812, DATA_PIN_LED, GRB>(leds, NUM_ANIMATION_LEDS);
 
   // init colour sequence
   colourSequence[0] = CRGB(255, 154, 0);
@@ -96,14 +102,40 @@ void setup()
   resetLEDState();
 
   FastLED.show();
+
+  lastFrameMillis = millis();
 }
 
 
 /**
- * main update loop - update animation and rendering
+ * main update loop - calculate delta time and call update functions
  */
 void loop()
 {
+  currentMillis = millis();
+  
+  deltaTime = currentMillis - lastFrameMillis;
+
+  updateAnimation(deltaTime);
+
+  updateAnimationType(deltaTime);
+
+  lastFrameMillis = currentMillis;
+}
+
+
+/**
+ * apply delta time to animation delay and update animation to LED strip
+ */
+void updateAnimation(unsigned long deltaTime)
+{
+  animationDelay -= deltaTime;
+
+  if (animationDelay > 0)
+  {
+    return;
+  }
+
   switch (animationType)
   {
     case ANIMATION_TYPE_CHASE:
@@ -127,53 +159,39 @@ void loop()
      default:
       break;
   }
-  
+    
   FastLED.show();
 
-  delay(animationDelay);
-
-  updateAnimationType(animationDelay);
+  animationDelay += animationTypeDelay;
 }
 
 
 /**
- * Reset all LEDs to black (off)
+ * apply delta time to animation timer and update the animation type being played
  */
-void resetLEDState()
+void updateAnimationType(unsigned long deltaTime)
 {
-  for (int i = 0; i < NUM_ANIMATION_LEDS; i++)
+  animationTimer -= deltaTime;
+
+  if (animationTimer > 0)
   {
-    leds[i] = CRGB(0, 0, 0);
-  }  
-}
+    return;
+  }
 
+  animationTimer = SWITCH_ANIMATE_DELAY;
+  
+  animationType++;
 
-/**
- * Update the animation type being played
- */
-void updateAnimationType(int frameDelay)
-{
-  // advance the count down
-  animationTimer -= frameDelay;
-
-  // once count down reaches zero, switch to the next animation type
-  if (animationTimer <= 0)
+  // if all animation types have been played, loop back to the start
+  if (animationType == ANIMATION_TYPE_NONE)
   {
-    animationTimer = SWITCH_ANIMATE_DELAY;
-    
-    animationType++;
+    animationType = ANIMATION_TYPE_CHASE;
+  }
 
-    // if all animation types have been played, loop back to the start
-    if (animationType > ANIMATION_TYPE_ZIPPY_CROSS)
-    {
-      animationType = ANIMATION_TYPE_CHASE;
-    }
+  initAnimationType(animationType);
 
-    initAnimationType(animationType);
-
-    // default all LEDs to being off when entering new state
-    resetLEDState();
-  }  
+  // default all LEDs to being off when entering new state
+  resetLEDState();
 }
 
 
@@ -186,34 +204,52 @@ void initAnimationType(int animType)
   {
     case ANIMATION_TYPE_CHASE:
       animationDelay = ANIMATION_DELAY_CHASE;
+      animationTypeDelay = ANIMATION_DELAY_CHASE;
       colourSequenceIndex = 0;
       break;
     case ANIMATION_TYPE_OFFSET_CHASE:
       animationDelay = ANIMATION_DELAY_OFFSET_CHASE;
+      animationTypeDelay = ANIMATION_DELAY_OFFSET_CHASE;
       colourSequenceIndex = 0;
       break;
     case ANIMATION_TYPE_GLOW:
       animationDelay = ANIMATION_DELAY_GLOW;
+      animationTypeDelay = ANIMATION_DELAY_GLOW;
       colourSequenceIndex = 0;
       glowDirection = 1;
       break;
     case ANIMATION_TYPE_CROSS:
       animationDelay = ANIMATION_DELAY_CROSS;
+      animationTypeDelay = ANIMATION_DELAY_CROSS;
       colourSequenceIndex = 0;
       glowDirection = 1;
       break;
     case ANIMATION_TYPE_ZIPPY:
       animationDelay = ANIMATION_DELAY_ZIPPY;
+      animationTypeDelay = ANIMATION_DELAY_ZIPPY;
       zippyMapDirection = ZIPPY_DIRECTION_UP;
       break;
     case ANIMATION_TYPE_ZIPPY_CROSS:
       animationDelay = ANIMATION_DELAY_ZIPPY_CROSS;
+      animationTypeDelay = ANIMATION_DELAY_ZIPPY_CROSS;
       zippyMapDirection = ZIPPY_DIRECTION_UP;
       break;
     default:
       // we shouldn't reach this
       break;
   }
+}
+
+
+/**
+ * Reset all LEDs to black (off)
+ */
+void resetLEDState()
+{
+  for (int i = 0; i < NUM_ANIMATION_LEDS; i++)
+  {
+    leds[i] = CRGB(0, 0, 0);
+  }  
 }
 
 
