@@ -31,16 +31,17 @@
 #define RIGHT_STRIP_INDEX 7             // first LED index of right strip
 
 #define COLOUR_SEQUENCE_SIZE 11         // number of colours in the animation sequence
+#define COLOUR_SEQUENCE_SIZE_SHORT 9    // number of colours in the shorter animation sequence
 #define COLOUR_DATA_LENGTH 22
 
 #define ANIMATION_DELAY_CHASE 50        // delay (in milliseconds) between animation frame update
 #define ANIMATION_DELAY_OFFSET_CHASE 50
-#define ANIMATION_DELAY_GLOW 50
-#define ANIMATION_DELAY_CROSS 50
-#define ANIMATION_DELAY_ZIPPY 40
-#define ANIMATION_DELAY_ZIPPY_CROSS 40
+#define ANIMATION_DELAY_GLOW 45
+#define ANIMATION_DELAY_CROSS 45
+#define ANIMATION_DELAY_ZIPPY 30
+#define ANIMATION_DELAY_ZIPPY_CROSS 30
 
-#define ANIMATION_TYPE_CHASE 0
+#define ANIMATION_TYPE_CHASE 0          // animation types supported
 #define ANIMATION_TYPE_OFFSET_CHASE 1
 #define ANIMATION_TYPE_GLOW 2
 #define ANIMATION_TYPE_CROSS 3
@@ -48,8 +49,8 @@
 #define ANIMATION_TYPE_ZIPPY_CROSS 5
 #define ANIMATION_TYPE_NONE 6
 
-#define ZIPPY_DIRECTION_UP 1
-#define ZIPPY_DIRECTION_DOWN 2
+#define ANIMATION_DIRECTION_UP 1
+#define ANIMATION_DIRECTION_DOWN -1
 
 #define SWITCH_ANIMATE_DELAY 5000     // number of milliseconds to play each animation type
 
@@ -67,10 +68,10 @@ unsigned long currentMillis;
 unsigned long lastFrameMillis;
 
 int colourSequenceIndex = 0;                // index into colour animation table
-int glowDirection = 1;                      // glow animation direction (1 = fade up, -1 = fade down)
-int zippyMapDirection = ZIPPY_DIRECTION_UP;
-int zippyMapIndex = COLOUR_SEQUENCE_SIZE - 1;
-CRGB zippyMap[29];
+int glowDirection = ANIMATION_DIRECTION_UP; // glow animation direction (1 = fade up, -1 = fade down)
+
+int zippyDirection = ANIMATION_DIRECTION_UP;
+int zippyAnimateIndex = 0;
 
 CRGB leds[NUM_ANIMATION_LEDS];              // RGB resources for rendering to the LED strips
 CRGB colourSequence[COLOUR_SEQUENCE_SIZE];  // colour look up table for animation
@@ -89,12 +90,6 @@ void setup()
   {
     colourSequence[j++] = CRGB(colourScheme[i], colourScheme[i + 1], 0);
   }
-
-  // init zippy effect colour map (TODO revisit & handle this differently)
-  for (int i = 0; i < 29; i++)
-  {
-    zippyMap[i] = CRGB(0, 0, 0);
-  }  
 
   // start all leds as black (off)
   resetLEDState();
@@ -137,10 +132,10 @@ void updateAnimation(unsigned long deltaTime)
   switch (animationType)
   {
     case ANIMATION_TYPE_CHASE:
-      animationChase();
+      animationChase(false);
       break;
     case ANIMATION_TYPE_OFFSET_CHASE:
-      animationOffsetChase();
+      animationChase(true);
       break;
     case ANIMATION_TYPE_GLOW:
       animationGlow();
@@ -214,23 +209,25 @@ void initAnimationType(int animType)
       animationDelay = ANIMATION_DELAY_GLOW;
       animationTypeDelay = ANIMATION_DELAY_GLOW;
       colourSequenceIndex = 0;
-      glowDirection = 1;
+      glowDirection = ANIMATION_DIRECTION_UP;
       break;
     case ANIMATION_TYPE_CROSS:
       animationDelay = ANIMATION_DELAY_CROSS;
       animationTypeDelay = ANIMATION_DELAY_CROSS;
       colourSequenceIndex = 0;
-      glowDirection = 1;
+      glowDirection = ANIMATION_DIRECTION_UP;
       break;
     case ANIMATION_TYPE_ZIPPY:
       animationDelay = ANIMATION_DELAY_ZIPPY;
       animationTypeDelay = ANIMATION_DELAY_ZIPPY;
-      zippyMapDirection = ZIPPY_DIRECTION_UP;
+      zippyDirection = ANIMATION_DIRECTION_UP;
+      zippyAnimateIndex = 0;
       break;
     case ANIMATION_TYPE_ZIPPY_CROSS:
       animationDelay = ANIMATION_DELAY_ZIPPY_CROSS;
       animationTypeDelay = ANIMATION_DELAY_ZIPPY_CROSS;
-      zippyMapDirection = ZIPPY_DIRECTION_UP;
+      zippyDirection = ANIMATION_DIRECTION_UP;
+      zippyAnimateIndex = 0;
       break;
     default:
       // we shouldn't reach this
@@ -254,7 +251,7 @@ void resetLEDState()
 /**
  * Cycle colour sequence up the 2 LED strips like a chase effect
  */
-void animationChase()
+void animationChase(bool animateWithOffset)
 {
   // cycle existing colours up the left strip (uses LED's 0 -> 7)
   for (int i = LEDS_PER_STRIP - 2; i >= 0; i--)
@@ -268,47 +265,22 @@ void animationChase()
     leds[RIGHT_STRIP_INDEX + i] = leds[RIGHT_STRIP_INDEX + i + 1];
   }
 
-  // feed next colour from the sequence into the beginning of both strips
-  leds[LEFT_STRIP_INDEX] = colourSequence[colourSequenceIndex];
-  leds[NUM_ANIMATION_LEDS - 1] = colourSequence[colourSequenceIndex];
+  // if right strip is offset, calculate alternative colour sequence index
+  int rightLEDStripColourIndex = colourSequenceIndex;
 
-  colourSequenceIndex++;
-
-  // loop colour sequence index once all colours rendered
-  if (colourSequenceIndex == COLOUR_SEQUENCE_SIZE)
+  if (animateWithOffset)
   {
-    colourSequenceIndex = 0;
-  }
-}
+    rightLEDStripColourIndex = colourSequenceIndex + 7;
 
-
-/**
- * Cycle colour sequence up the 2 LED strips like a chase effect
- */
-void animationOffsetChase()
-{
-  // cycle existing colours up the left strip (uses LED's 0 -> 7)
-  for (int i = LEDS_PER_STRIP - 2; i >= 0; i--)
-  {
-    leds[i + 1] = leds[i];
-  }
-
-  // cycle existing colours up the right strip (uses LED's 15 -> 8)
-  for (int i = 0; i <= LEDS_PER_STRIP - 2; i++)
-  {
-    leds[RIGHT_STRIP_INDEX + i] = leds[RIGHT_STRIP_INDEX + i + 1];
-  }
-
-  int offsetIndex = colourSequenceIndex + 7;
-
-  if (offsetIndex > COLOUR_SEQUENCE_SIZE)
-  {
-    offsetIndex = offsetIndex - (COLOUR_SEQUENCE_SIZE - 1);
+    if (rightLEDStripColourIndex > COLOUR_SEQUENCE_SIZE)
+    {
+      rightLEDStripColourIndex = rightLEDStripColourIndex - (COLOUR_SEQUENCE_SIZE - 1);
+    }   
   }
 
   // feed next colour from the sequence into the beginning of both strips
   leds[LEFT_STRIP_INDEX] = colourSequence[colourSequenceIndex];
-  leds[NUM_ANIMATION_LEDS - 1] = colourSequence[offsetIndex];
+  leds[NUM_ANIMATION_LEDS - 1] = colourSequence[rightLEDStripColourIndex];
 
   colourSequenceIndex++;
 
@@ -372,46 +344,29 @@ void animationCross()
  */
 void animationZippy(bool oppositeStrips)
 {
-  if (zippyMapDirection == ZIPPY_DIRECTION_UP)
+  int readColourIndexStart = zippyAnimateIndex >= LEDS_PER_STRIP ? (zippyAnimateIndex - 6) : 0;
+  int leftLEDStripWriteIndex = zippyDirection == ANIMATION_DIRECTION_UP ? min(6, zippyAnimateIndex) : max(6 - zippyAnimateIndex, 0);
+  int writeAdvance = -zippyDirection;
+  int colourSequenceReadIndex;
+  int rightLEDStripWriteIndex;
+
+  for (int i = readColourIndexStart; i <= zippyAnimateIndex; i++)
   {
-    for (int i  = 0; i < COLOUR_SEQUENCE_SIZE; i++)
-    {
-      zippyMap[zippyMapIndex - i] = colourSequence[i];
-    }
+    colourSequenceReadIndex = min(i, 7);
+    rightLEDStripWriteIndex = oppositeStrips ? (RIGHT_STRIP_INDEX + leftLEDStripWriteIndex) : (13 - leftLEDStripWriteIndex);
 
-    zippyMapIndex++;
+    leds[leftLEDStripWriteIndex] = colourSequence[colourSequenceReadIndex];
+    leds[rightLEDStripWriteIndex] = colourSequence[colourSequenceReadIndex];
 
-    if (zippyMapIndex == 24)
-    {
-      zippyMapDirection = ZIPPY_DIRECTION_DOWN;
-      zippyMapIndex = 18;
-    }
+    leftLEDStripWriteIndex += writeAdvance;
   }
 
-  if (zippyMapDirection == ZIPPY_DIRECTION_DOWN)
+  zippyAnimateIndex++;
+
+  // detect if entire colour sequence has played across LED strip, if so, switch directions
+  if (zippyAnimateIndex == 15)
   {
-    for (int i  = 0; i < COLOUR_SEQUENCE_SIZE; i++)
-    {
-      zippyMap[zippyMapIndex + i] = colourSequence[i];
-    }
-
-    zippyMapIndex--;
-
-    if (zippyMapIndex == 4)
-    {
-      zippyMapDirection = ZIPPY_DIRECTION_UP;
-      zippyMapIndex = 10;
-    }
+    zippyDirection *= -1;
+    zippyAnimateIndex = 0;    
   }
-
-  // copy buffer segment to the LED strip for rendering
-  for (int i = 0; i < LEDS_PER_STRIP; i++)
-  {
-    leds[i] = zippyMap[COLOUR_SEQUENCE_SIZE + i];
-
-    // read index is different if the 2 strips are opposite
-    int rightStripIndex = oppositeStrips ? (COLOUR_SEQUENCE_SIZE + LEDS_PER_STRIP - i - 1) : (COLOUR_SEQUENCE_SIZE + i);
-
-    leds[NUM_ANIMATION_LEDS - 1 - i] = zippyMap[rightStripIndex];
-  }  
 }
