@@ -23,6 +23,7 @@
 // project configuration values
 #define NUM_ANIMATION_LEDS 14           // total number of LEDs required for animation
 
+#define DATA_PIN_RANDOM 0               // use noise for random seed
 #define DATA_PIN_LED 7                  // LED communicataion pin from Uno board
 #define DATA_PIN_SENSOR 8               // sensor read pin (used flail state detection)
 
@@ -31,8 +32,10 @@
 #define RIGHT_STRIP_INDEX 7             // first LED index of right strip
 
 #define COLOUR_SEQUENCE_SIZE 11         // number of colours in the animation sequence
-#define COLOUR_SEQUENCE_SIZE_SHORT 9    // number of colours in the shorter animation sequence
+#define COLOUR_SEQUENCE_SIZE_SHORT 7    // number of colours in the shorter animation sequence
 #define COLOUR_DATA_LENGTH 22
+
+#define ANIMATION_ADVANCE 1             // set to 1 to allow animation types to change. set to 0 to stay on the same animation type
 
 #define ANIMATION_DELAY_CHASE 50        // delay (in milliseconds) between animation frame update
 #define ANIMATION_DELAY_OFFSET_CHASE 50
@@ -40,6 +43,7 @@
 #define ANIMATION_DELAY_CROSS 45
 #define ANIMATION_DELAY_ZIPPY 30
 #define ANIMATION_DELAY_ZIPPY_CROSS 30
+#define ANIMATION_DELAY_DECAY 0         // no delay here as we'll use the decayActiveDelays array
 
 #define ANIMATION_TYPE_CHASE 0          // animation types supported
 #define ANIMATION_TYPE_OFFSET_CHASE 1
@@ -47,34 +51,37 @@
 #define ANIMATION_TYPE_CROSS 3
 #define ANIMATION_TYPE_ZIPPY 4
 #define ANIMATION_TYPE_ZIPPY_CROSS 5
-#define ANIMATION_TYPE_NONE 6
+#define ANIMATION_TYPE_DECAY 6
+#define ANIMATION_TYPE_NONE 7
 
 #define ANIMATION_DIRECTION_UP 1
 #define ANIMATION_DIRECTION_DOWN -1
 
-#define SWITCH_ANIMATE_DELAY 5000     // number of milliseconds to play each animation type
+#define SWITCH_ANIMATE_DELAY 5000       // number of milliseconds to play each animation type
 
 
 // global variables
-int animationType = ANIMATION_TYPE_CHASE;   // current animation type to render
+int animationType = ANIMATION_TYPE_CHASE;     // current animation type to render
 int animationTypeDelay = ANIMATION_DELAY_CHASE;
-int animationDelay = ANIMATION_DELAY_CHASE; // delay (in milliseconds) between each update
-int animationTimer = SWITCH_ANIMATE_DELAY;  // time until animation type is updated
+int animationDelay = ANIMATION_DELAY_CHASE;   // delay (in milliseconds) between each update
+int animationTimer = SWITCH_ANIMATE_DELAY;    // time until animation type is updated
 
 int colourScheme[] = {255, 154, 255, 122, 255, 90, 255, 0, 128, 0, 64, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-unsigned long deltaTime;
 unsigned long currentMillis;
 unsigned long lastFrameMillis;
 
-int colourSequenceIndex = 0;                // index into colour animation table
-int glowDirection = ANIMATION_DIRECTION_UP; // glow animation direction (1 = fade up, -1 = fade down)
-
-int zippyDirection = ANIMATION_DIRECTION_UP;
+int colourSequenceIndex = 0;                  // index into colour animation table
+int glowDirection = ANIMATION_DIRECTION_UP;   // glow animation direction (1 = fade up, -1 = fade down)
+int zippyDirection = ANIMATION_DIRECTION_UP;  // zip animation directon (1 = strobe up strip, -1 = strobe down strip)
 int zippyAnimateIndex = 0;
 
-CRGB leds[NUM_ANIMATION_LEDS];              // RGB resources for rendering to the LED strips
-CRGB colourSequence[COLOUR_SEQUENCE_SIZE];  // colour look up table for animation
+int decayActiveDelays[NUM_ANIMATION_LEDS];
+int decayResetDelays[NUM_ANIMATION_LEDS];
+int decayColourIndexes[NUM_ANIMATION_LEDS];
+
+CRGB leds[NUM_ANIMATION_LEDS];                // RGB resources for rendering to the LED strips
+CRGB colourSequence[COLOUR_SEQUENCE_SIZE];    // colour look up table for animation
 
 
 /**
@@ -90,6 +97,8 @@ void setup()
   {
     colourSequence[j++] = CRGB(colourScheme[i], colourScheme[i + 1], 0);
   }
+
+  randomSeed(analogRead(DATA_PIN_RANDOM));
 
   // start all leds as black (off)
   resetLEDState();
@@ -107,9 +116,11 @@ void loop()
 {
   currentMillis = millis();
   
-  deltaTime = currentMillis - lastFrameMillis;
+  unsigned long deltaTime = currentMillis - lastFrameMillis;
 
   updateAnimation(deltaTime);
+
+  updateSensor(deltaTime);
 
   updateAnimationType(deltaTime);
 
@@ -149,6 +160,9 @@ void updateAnimation(unsigned long deltaTime)
     case ANIMATION_TYPE_ZIPPY_CROSS:
       animationZippy(true);
       break;
+    case ANIMATION_TYPE_DECAY:
+      animationDecay(deltaTime, false);  
+      break;
      default:
       break;
   }
@@ -173,7 +187,7 @@ void updateAnimationType(unsigned long deltaTime)
 
   animationTimer = SWITCH_ANIMATE_DELAY;
   
-  animationType++;
+  animationType += ANIMATION_ADVANCE;
 
   // if all animation types have been played, loop back to the start
   if (animationType == ANIMATION_TYPE_NONE)
@@ -189,6 +203,15 @@ void updateAnimationType(unsigned long deltaTime)
 
 
 /**
+ * read sensor and trigger animation changes based on readings
+ */
+void updateSensor(unsigned long deltaTime)
+{
+  // TODO 
+}
+
+
+/**
  * initialise animation type variables
  */
 void initAnimationType(int animType)
@@ -200,35 +223,55 @@ void initAnimationType(int animType)
       animationTypeDelay = ANIMATION_DELAY_CHASE;
       colourSequenceIndex = 0;
       break;
+
     case ANIMATION_TYPE_OFFSET_CHASE:
       animationDelay = ANIMATION_DELAY_OFFSET_CHASE;
       animationTypeDelay = ANIMATION_DELAY_OFFSET_CHASE;
       colourSequenceIndex = 0;
       break;
+
     case ANIMATION_TYPE_GLOW:
       animationDelay = ANIMATION_DELAY_GLOW;
       animationTypeDelay = ANIMATION_DELAY_GLOW;
       colourSequenceIndex = 0;
       glowDirection = ANIMATION_DIRECTION_UP;
       break;
+
     case ANIMATION_TYPE_CROSS:
       animationDelay = ANIMATION_DELAY_CROSS;
       animationTypeDelay = ANIMATION_DELAY_CROSS;
       colourSequenceIndex = 0;
       glowDirection = ANIMATION_DIRECTION_UP;
       break;
+
     case ANIMATION_TYPE_ZIPPY:
       animationDelay = ANIMATION_DELAY_ZIPPY;
       animationTypeDelay = ANIMATION_DELAY_ZIPPY;
       zippyDirection = ANIMATION_DIRECTION_UP;
       zippyAnimateIndex = 0;
       break;
+
     case ANIMATION_TYPE_ZIPPY_CROSS:
       animationDelay = ANIMATION_DELAY_ZIPPY_CROSS;
       animationTypeDelay = ANIMATION_DELAY_ZIPPY_CROSS;
       zippyDirection = ANIMATION_DIRECTION_UP;
       zippyAnimateIndex = 0;
       break;
+
+    case ANIMATION_TYPE_DECAY:
+      animationDelay = ANIMATION_DELAY_DECAY;
+      animationTypeDelay = ANIMATION_DELAY_DECAY;
+
+      for (int i = 0; i < NUM_ANIMATION_LEDS; i++)
+      {
+        int newDelay = 35 + (random(0, 6) * 5);
+
+        decayActiveDelays[i] = newDelay;
+        decayResetDelays[i] = newDelay;
+        decayColourIndexes[i] = random(0, 9);        
+      }
+      break;
+
     default:
       // we shouldn't reach this
       break;
@@ -270,7 +313,7 @@ void animationChase(bool animateWithOffset)
 
   if (animateWithOffset)
   {
-    rightLEDStripColourIndex = colourSequenceIndex + 7;
+    rightLEDStripColourIndex = colourSequenceIndex + COLOUR_SEQUENCE_SIZE_SHORT;
 
     if (rightLEDStripColourIndex > COLOUR_SEQUENCE_SIZE)
     {
@@ -368,5 +411,35 @@ void animationZippy(bool oppositeStrips)
   {
     zippyDirection *= -1;
     zippyAnimateIndex = 0;    
+  }
+}
+
+
+/**
+ * decay colours from bright to black on each LED
+ */
+void animationDecay(unsigned long deltaTime)
+{
+  for (int i = 0; i < NUM_ANIMATION_LEDS; i++)
+  {
+    decayActiveDelays[i] -= deltaTime;
+
+    if (decayActiveDelays[i] > 0)
+    {
+      continue;
+    }
+
+    decayColourIndexes[i]++;
+
+    if (decayColourIndexes[i] == 10)
+    {
+      decayColourIndexes[i] = 0;
+
+      decayResetDelays[i] = 35 + (random(0, 6) * 5);
+    }
+
+    leds[i] = colourSequence[decayColourIndexes[i]];
+
+    decayActiveDelays[i] = decayResetDelays[i];
   }
 }
