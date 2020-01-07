@@ -56,24 +56,48 @@
 #define ANIMATION_DIRECTION_UP 1
 #define ANIMATION_DIRECTION_DOWN -1
 
+#define FLAIL_STATE_UNKNOWN 0
+#define FLAIL_STATE_OPEN 1
+#define FLAIL_STATE_CLOSED 2
+#define FLAIL_STATE_MOVING 3
+
+#define ANIMATION_CHANGE_UNSTABLE 7
+#define ANIMATION_CHANGE_COOLDOWN 600
 
 // global variables
 int animationType;
 int animationTypeDelay;
 int animationDelay;
 
-int colourScheme[] = {255, 154, 255, 122, 255, 90, 255, 0, 128, 0, 64, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+int colourScheme[] = {                        // red / green values for colour scheme - blue always 0.
+    255, 154, 
+    255, 122, 
+    255, 90, 
+    255, 0, 
+    128, 0, 
+    64, 0, 
+    32, 0, 
+    0, 0, 
+    0, 0, 
+    0, 0, 
+    0, 0
+  };
 
 unsigned long currentMillis;
 unsigned long lastFrameMillis;
 unsigned long deltaTime;
+
+int flailStateLockedIn = FLAIL_STATE_UNKNOWN; // current stable flail state in control of animation
+int flailStateDesired = FLAIL_STATE_UNKNOWN;  // desired flail state based on current state of the flail
+int flailStateChangeCountdown = 0;            // duration that the desired flail state must remain stable before animation will update
+int flailStateCountdownResets = 0;            // number of times the flail state has changed without the countdown reaching zero
 
 int colourSequenceIndex = 0;                  // index into colour animation table
 int glowDirection = ANIMATION_DIRECTION_UP;   // glow animation direction (1 = fade up, -1 = fade down)
 int zippyDirection = ANIMATION_DIRECTION_UP;  // zip animation directon (1 = strobe up strip, -1 = strobe down strip)
 int zippyAnimateIndex = 0;
 
-int decayActiveDelays[NUM_ANIMATION_LEDS];
+int decayActiveDelays[NUM_ANIMATION_LEDS];    // data tables for decay animation type
 int decayResetDelays[NUM_ANIMATION_LEDS];
 int decayColourIndexes[NUM_ANIMATION_LEDS];
 
@@ -101,7 +125,16 @@ void setup()
 
   randomSeed(analogRead(DATA_PIN_RANDOM));
 
-  animationType = digitalRead(DATA_PIN_SENSOR) == LOW ? ANIMATION_TYPE_GLOW : ANIMATION_TYPE_CHASE;
+  if (digitalRead(DATA_PIN_SENSOR) == LOW)
+  {
+    flailStateLockedIn = FLAIL_STATE_CLOSED;
+    animationType = ANIMATION_TYPE_GLOW;
+  }
+  else
+  {
+    flailStateLockedIn = FLAIL_STATE_OPEN;
+    animationType = ANIMATION_TYPE_CHASE;
+  }
 
   initAnimationType(animationType);
 
@@ -180,30 +213,63 @@ void updateAnimation(unsigned long deltaTime)
  */
 void updateAnimationType(unsigned long deltaTime)
 {
-  int switchToAnimationType = ANIMATION_TYPE_NONE;
   int sensorState = digitalRead(DATA_PIN_SENSOR);
+  int flailStateDetected;
 
-  if (sensorState == LOW && animationType != ANIMATION_TYPE_GLOW)
+  // determine current state of the flail
+  if (sensorState == LOW)
   {
-    switchToAnimationType = ANIMATION_TYPE_GLOW;
+    flailStateDetected = FLAIL_STATE_CLOSED;
+  }
+  else
+  {
+    flailStateDetected = FLAIL_STATE_OPEN;
   }
 
-  if (sensorState == HIGH && animationType != ANIMATION_TYPE_CHASE)
-  {
-    switchToAnimationType = ANIMATION_TYPE_CHASE;
-  }
-
-  if (switchToAnimationType == ANIMATION_TYPE_NONE)
+  // if detected animation state matches current animation state and there is now cooldown, assume all is well.
+  if (flailStateDetected == flailStateLockedIn && flailStateChangeCountdown == 0)
   {
     return;
   }
 
-  animationType = switchToAnimationType;
+  int switchToAnimationType = ANIMATION_TYPE_NONE;
 
-  initAnimationType(animationType);
+  if (flailStateDetected == flailStateDesired)
+  {
+    flailStateChangeCountdown -= deltaTime;
 
-  // always reset LEDs to being off when entering new state
-  resetLEDState();
+    if (flailStateChangeCountdown <= 0)
+    {
+      flailStateCountdownResets = 0;
+      flailStateChangeCountdown = 0;
+      flailStateLockedIn = flailStateDesired;
+      flailStateDesired = FLAIL_STATE_UNKNOWN;
+
+      switchToAnimationType = flailStateLockedIn == FLAIL_STATE_CLOSED ? ANIMATION_TYPE_GLOW : ANIMATION_TYPE_CHASE;
+    }
+  }
+  else
+  {
+    flailStateDesired = flailStateDetected;
+    flailStateChangeCountdown = ANIMATION_CHANGE_COOLDOWN;
+    
+    flailStateCountdownResets++;
+
+    if (flailStateCountdownResets == ANIMATION_CHANGE_UNSTABLE)
+    {
+      switchToAnimationType = ANIMATION_TYPE_DECAY;
+    }
+  }
+
+  if (switchToAnimationType != ANIMATION_TYPE_NONE)
+  {
+    animationType = switchToAnimationType;
+
+    initAnimationType(animationType);
+
+    // always reset LEDs to being off when entering new state
+    resetLEDState();
+  }
 }
 
 
