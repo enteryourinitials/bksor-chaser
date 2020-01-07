@@ -161,7 +161,7 @@ void updateAnimation(unsigned long deltaTime)
       animationZippy(true);
       break;
     case ANIMATION_TYPE_DECAY:
-      animationDecay(deltaTime, false);  
+      animationDecay(deltaTime);  
       break;
      default:
       break;
