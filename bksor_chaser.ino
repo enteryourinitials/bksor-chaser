@@ -5,8 +5,8 @@
  * Notes: Arduino driven LED animation for the ramp on Black Knight: Sword of Rage pinball machine
  *    - Designed to animate the unlit ramp lighting bolt cutouts on Black Knight Pro models 
  *    - Controlled by Arduino Uno board - requires 12V input
- *    - Uses addressable WS2812 RGB LED strip cut in 2
- *    - TODO: Add sensor to detect flail movement and change animation type
+ *    - Uses addressable WS2812 RGB LED strip cut in 2 - requires 5V
+ *    - Reads sensor to switch between animation states - requires 5V
  *    
  *    - LED index layout
  *        6 | 7   <- top of ramp
@@ -35,8 +35,6 @@
 #define COLOUR_SEQUENCE_SIZE_SHORT 7    // number of colours in the shorter animation sequence
 #define COLOUR_DATA_LENGTH 22
 
-#define ANIMATION_ADVANCE 1             // set to 1 to allow animation types to change. set to 0 to stay on the same animation type
-
 #define ANIMATION_DELAY_CHASE 50        // delay (in milliseconds) between animation frame update
 #define ANIMATION_DELAY_OFFSET_CHASE 50
 #define ANIMATION_DELAY_GLOW 45
@@ -44,8 +42,9 @@
 #define ANIMATION_DELAY_ZIPPY 30
 #define ANIMATION_DELAY_ZIPPY_CROSS 30
 #define ANIMATION_DELAY_DECAY 0         // no delay here as we'll use the decayActiveDelays array
+#define ANIMATION_DELAY_NONE 0
 
-#define ANIMATION_TYPE_CHASE 0          // animation types supported
+#define ANIMATION_TYPE_CHASE 0          // animation types
 #define ANIMATION_TYPE_OFFSET_CHASE 1
 #define ANIMATION_TYPE_GLOW 2
 #define ANIMATION_TYPE_CROSS 3
@@ -57,19 +56,17 @@
 #define ANIMATION_DIRECTION_UP 1
 #define ANIMATION_DIRECTION_DOWN -1
 
-#define SWITCH_ANIMATE_DELAY 5000       // number of milliseconds to play each animation type
-
 
 // global variables
-int animationType = ANIMATION_TYPE_CHASE;     // current animation type to render
-int animationTypeDelay = ANIMATION_DELAY_CHASE;
-int animationDelay = ANIMATION_DELAY_CHASE;   // delay (in milliseconds) between each update
-int animationTimer = SWITCH_ANIMATE_DELAY;    // time until animation type is updated
+int animationType;
+int animationTypeDelay;
+int animationDelay;
 
 int colourScheme[] = {255, 154, 255, 122, 255, 90, 255, 0, 128, 0, 64, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
 unsigned long currentMillis;
 unsigned long lastFrameMillis;
+unsigned long deltaTime;
 
 int colourSequenceIndex = 0;                  // index into colour animation table
 int glowDirection = ANIMATION_DIRECTION_UP;   // glow animation direction (1 = fade up, -1 = fade down)
@@ -89,6 +86,8 @@ CRGB colourSequence[COLOUR_SEQUENCE_SIZE];    // colour look up table for animat
  */
 void setup()
 {
+  //Serial.begin(9600);   // enable for console logging
+
   FastLED.addLeds<WS2812, DATA_PIN_LED, GRB>(leds, NUM_ANIMATION_LEDS);
 
   // init colour sequence
@@ -98,9 +97,14 @@ void setup()
     colourSequence[j++] = CRGB(colourScheme[i], colourScheme[i + 1], 0);
   }
 
+  pinMode(DATA_PIN_SENSOR, INPUT);
+
   randomSeed(analogRead(DATA_PIN_RANDOM));
 
-  // start all leds as black (off)
+  animationType = digitalRead(DATA_PIN_SENSOR) == LOW ? ANIMATION_TYPE_GLOW : ANIMATION_TYPE_CHASE;
+
+  initAnimationType(animationType);
+
   resetLEDState();
 
   FastLED.show();
@@ -116,11 +120,9 @@ void loop()
 {
   currentMillis = millis();
   
-  unsigned long deltaTime = currentMillis - lastFrameMillis;
+  deltaTime = currentMillis - lastFrameMillis;
 
   updateAnimation(deltaTime);
-
-  updateSensor(deltaTime);
 
   updateAnimationType(deltaTime);
 
@@ -163,7 +165,7 @@ void updateAnimation(unsigned long deltaTime)
     case ANIMATION_TYPE_DECAY:
       animationDecay(deltaTime);  
       break;
-     default:
+    case ANIMATION_TYPE_NONE:
       break;
   }
     
@@ -174,40 +176,34 @@ void updateAnimation(unsigned long deltaTime)
 
 
 /**
- * apply delta time to animation timer and update the animation type being played
+ * evaluate sensor state detection and switch to desired animation type
  */
 void updateAnimationType(unsigned long deltaTime)
 {
-  animationTimer -= deltaTime;
+  int switchToAnimationType = ANIMATION_TYPE_NONE;
+  int sensorState = digitalRead(DATA_PIN_SENSOR);
 
-  if (animationTimer > 0)
+  if (sensorState == LOW && animationType != ANIMATION_TYPE_GLOW)
+  {
+    switchToAnimationType = ANIMATION_TYPE_GLOW;
+  }
+
+  if (sensorState == HIGH && animationType != ANIMATION_TYPE_CHASE)
+  {
+    switchToAnimationType = ANIMATION_TYPE_CHASE;
+  }
+
+  if (switchToAnimationType == ANIMATION_TYPE_NONE)
   {
     return;
   }
 
-  animationTimer = SWITCH_ANIMATE_DELAY;
-  
-  animationType += ANIMATION_ADVANCE;
-
-  // if all animation types have been played, loop back to the start
-  if (animationType == ANIMATION_TYPE_NONE)
-  {
-    animationType = ANIMATION_TYPE_CHASE;
-  }
+  animationType = switchToAnimationType;
 
   initAnimationType(animationType);
 
-  // default all LEDs to being off when entering new state
+  // always reset LEDs to being off when entering new state
   resetLEDState();
-}
-
-
-/**
- * read sensor and trigger animation changes based on readings
- */
-void updateSensor(unsigned long deltaTime)
-{
-  // TODO 
 }
 
 
@@ -280,7 +276,7 @@ void initAnimationType(int animType)
 
 
 /**
- * Reset all LEDs to black (off)
+ * Reset all LEDs to off
  */
 void resetLEDState()
 {
