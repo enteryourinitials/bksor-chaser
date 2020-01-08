@@ -227,7 +227,7 @@ void updateAnimationType(unsigned long deltaTime)
       flailStateLockedIn = flailStateDesired;
       flailStateDesired = FLAIL_STATE_UNKNOWN;
 
-      switchToAnimationType = flailStateLockedIn == FLAIL_STATE_CLOSED ? ANIMATION_TYPE_GLOW : ANIMATION_TYPE_CHASE;
+      switchToAnimationType = flailStateLockedIn == FLAIL_STATE_CLOSED ? ANIMATION_TYPE_GLOW : ANIMATION_TYPE_OFFSET_CHASE;
     }
   }
   else
