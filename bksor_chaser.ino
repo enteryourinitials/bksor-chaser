@@ -9,34 +9,41 @@
  *    - Reads sensor to switch between animation states - requires 5V
  *    
  *    - LED index layout
- *        6 | 7   <- top of ramp
- *        5 | 8
- *        4 | 9
- *        3 | 10
- *        2 | 11
- *        1 | 12
- *        0 | 13  <- ramp entry
+ *       13 | 14  <- top of ramp
+ *       12 | 15
+ *       11 | 16
+ *       10 | 17
+ *        9 | 18
+ *        8 | 19
+ *        7 | 20
+ *        6 | 21
+ *        5 | 22
+ *        4 | 23
+ *        3 | 24
+ *        2 | 25
+ *        1 | 26
+ *        0 | 27  <- ramp entry
  */
 
 #include "FastLED.h"
 
 // project configuration values
-#define NUM_ANIMATION_LEDS 14           // total number of LEDs required for animation
+#define NUM_ANIMATION_LEDS 28           // total number of LEDs required for animation
 
 #define DATA_PIN_RANDOM 0               // use noise for random seed
 #define DATA_PIN_LED 7                  // LED communicataion pin from Uno board
 #define DATA_PIN_SENSOR 8               // sensor read pin (used flail state detection)
 
-#define LEDS_PER_STRIP 7                // number of LEDs per strip
+#define LEDS_PER_STRIP 14               // number of LEDs per strip
 #define LEFT_STRIP_INDEX 0              // first LED index of left strip
-#define RIGHT_STRIP_INDEX 7             // first LED index of right strip
+#define RIGHT_STRIP_INDEX 14            // first LED index of right strip
 
 #define COLOUR_SEQUENCE_SIZE 11         // number of colours in the animation sequence
 #define COLOUR_SEQUENCE_SIZE_SHORT 7    // number of colours in the shorter animation sequence
 #define COLOUR_DATA_LENGTH 22
 
 #define ANIMATION_DELAY_CHASE 50        // delay (in milliseconds) between animation frame update
-#define ANIMATION_DELAY_OFFSET_CHASE 50
+#define ANIMATION_DELAY_OFFSET_CHASE 40
 #define ANIMATION_DELAY_GLOW 45
 #define ANIMATION_DELAY_CROSS 45
 #define ANIMATION_DELAY_ZIPPY 30
@@ -361,7 +368,7 @@ void animationChase(bool animateWithOffset)
   {
     rightLEDStripColourIndex = colourSequenceIndex + COLOUR_SEQUENCE_SIZE_SHORT;
 
-    if (rightLEDStripColourIndex > COLOUR_SEQUENCE_SIZE)
+    if (rightLEDStripColourIndex >= COLOUR_SEQUENCE_SIZE)
     {
       rightLEDStripColourIndex = rightLEDStripColourIndex - (COLOUR_SEQUENCE_SIZE - 1);
     }   
@@ -433,16 +440,16 @@ void animationCross()
  */
 void animationZippy(bool oppositeStrips)
 {
-  int readColourIndexStart = zippyAnimateIndex >= LEDS_PER_STRIP ? (zippyAnimateIndex - 6) : 0;
-  int leftLEDStripWriteIndex = zippyDirection == ANIMATION_DIRECTION_UP ? min(6, zippyAnimateIndex) : max(6 - zippyAnimateIndex, 0);
+  int readColourIndexStart = zippyAnimateIndex >= LEDS_PER_STRIP ? (zippyAnimateIndex - 13) : 0;
+  int leftLEDStripWriteIndex = zippyDirection == ANIMATION_DIRECTION_UP ? min(13, zippyAnimateIndex) : max(13 - zippyAnimateIndex, 0);
   int writeAdvance = -zippyDirection;
   int colourSequenceReadIndex;
   int rightLEDStripWriteIndex;
 
   for (int i = readColourIndexStart; i <= zippyAnimateIndex; i++)
   {
-    colourSequenceReadIndex = min(i, 7);
-    rightLEDStripWriteIndex = oppositeStrips ? (RIGHT_STRIP_INDEX + leftLEDStripWriteIndex) : (13 - leftLEDStripWriteIndex);
+    colourSequenceReadIndex = min(i, 13);
+    rightLEDStripWriteIndex = oppositeStrips ? (RIGHT_STRIP_INDEX + leftLEDStripWriteIndex) : (27 - leftLEDStripWriteIndex);
 
     leds[leftLEDStripWriteIndex] = colourSequence[colourSequenceReadIndex];
     leds[rightLEDStripWriteIndex] = colourSequence[colourSequenceReadIndex];
@@ -453,7 +460,7 @@ void animationZippy(bool oppositeStrips)
   zippyAnimateIndex++;
 
   // detect if entire colour sequence has played across LED strip, if so, switch directions
-  if (zippyAnimateIndex == 15)
+  if (zippyAnimateIndex == 30)
   {
     zippyDirection *= -1;
     zippyAnimateIndex = 0;    
@@ -468,7 +475,7 @@ void animationDecay(unsigned long deltaTime)
 {
   for (int i = 0; i < NUM_ANIMATION_LEDS; i++)
   {
-    decayActiveDelays[i] -= deltaTime;
+    decayActiveDelays[i] -= (int) deltaTime;
 
     if (decayActiveDelays[i] > 0)
     {
